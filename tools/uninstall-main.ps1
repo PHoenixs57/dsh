@@ -1,4 +1,4 @@
-# 科研模式卸载脚本主逻辑（由 uninstall.bat 调用）
+﻿# 科研模式卸载脚本主逻辑（由 uninstall.bat 调用）
 # 兼容 Windows PowerShell 5.1；本文件由构建脚本统一加 UTF-8 BOM。
 
 if ($env:DSH_HOME) { $DSH_DIR = $env:DSH_HOME } else { $DSH_DIR = Join-Path $env:USERPROFILE '.dsh' }
