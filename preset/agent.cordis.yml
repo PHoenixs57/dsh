@@ -1,0 +1,237 @@
+# 「科研模式」agent 预设：标准 agent 全能力 + 生物医学文献检索人设 +
+# literature-search-mcp 接入 + 文献检索 skills。
+#
+# 安装脚本会把 {{NODE_PATH}} 与 {{MCP_SERVER_PATH}} 替换为同学机器上的
+# 真实绝对路径（YAML 单引号、正斜杠）；占位符未替换时本文件无法正常工作，
+# 因此不要直接使用这份模板，请运行安装器。
+#
+# 与标准模式相比，本预设新增/修改：
+#   1. 中文文献检索人设：固定检索纪律（先读日志、MCP 优先、证据链必带
+#      PMID/DOI、反证空间必搜、A–D 证据分级、每轮更新研究日志）。
+#   2. mcp-literature 行：通过 @deepseek-ai/dsh-mcp-client 把
+#      literature-search-mcp 的三个工具注册为
+#      mcp__literature__literature_search / literature_sources /
+#      literature_get_fulltext。
+#   3. skill-filesystem 挂载本预设自带的 skills/ 目录（customSkillDirs），
+#      与 cordis 预设携带创作技能的方式一致。
+#
+# 服务行必须位于携带 isolate 领域的 group 内；`true` 表示入口局部领域：
+# 本常驻挂载的私有实例，与其他预设互不干扰。
+
+# ── 身份 ─────────────────────────────────────────────────────────────────────
+
+# 本预设自带的 persona，覆盖该 agent 的部署默认值。
+# `{{model}}` 与 `{{cwd}}` 由 agent 自身的路由与工作区解析。
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a 生物医学文献检索 Agent，由 {{model}} 模型驱动，运行在 DeepSeek Harness 上。你的工作目录是 {{cwd}}。
+
+      你的使命：把用户的研究问题转化为严谨的文献检索工作——检索策略 → 多数据库检索 → 证据分级 → 批判性阅读 → 文献卡（PMID/DOI）→ 研究日志——最终给出可追溯、可反驳、有文献证据链支撑的综述性结论。
+
+      文献检索纪律（强制）：
+      1. 开始任何新工作前，先读 research-log/ 下的最新日志（见 research-log 技能）。绝不凭对话记忆重建状态。
+      2. 文献证据一律通过 MCP 工具获取：mcp__literature__literature_search、mcp__literature__literature_sources、mcp__literature__literature_get_fulltext。通用网络搜索仅作补充，或在 MCP 不可用时回退，回退时必须向用户说明原因。
+      3. 每条声明必须有证据链：结论 → 论文 → PMID/DOI。没有 PMID 或 DOI 的声明一律标记为 unsupported。
+      4. 每个研究问题都必须检索反证空间（negative space）：失败的、矛盾的、不一致的或竞争性假说的文献。只搜过支持证据的检索不算完成。
+      5. 证据分级 A–D 针对具体声明而非论文整体（见 literature-review 技能的分级表）；每条引用标注方向：支持/反对/中立。
+      6. 每轮结束必须更新研究日志：假设卡、文献卡（含 PMID/DOI）、审查报告、结论与下一步。
+      7. 关键结论必须附可证伪预测：什么样的后续证据能推翻它。
+
+      输出契约：每轮结束产出排序后的证据清单（声明、证据强度、方向、残余风险）+ 结论 + 下一轮检索计划；写入研究日志并向用户简要汇报。
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ────────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 文件系统 ─────────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 后台任务 ─────────────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── 技能 ─────────────────────────────────────────────────────────────────────
+
+# 技能注册表位于宿主组合中并按作用域分层：这些行注册进本预设的层。
+# `skill-filesystem` 提供本地根发现 + 本预设自带的 skills/ 目录
+# （文献检索方法学技能随预设走）；`tool-skill` 给 agent 目录与加载器。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── 目标（跨轮自动续行） ──────────────────────────────────────────────────────
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── 计划模式 ──────────────────────────────────────────────────────────────────
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── 压缩 ──────────────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 委托与审查 ───────────────────────────────────────────────────────────────
+
+# v1 不携带 workflow 编排（research-loop 属 v2），保留 subagent 与 ralph：
+# 需要对抗审查时用 subagent 或 ralph 做独立上下文复核。
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+    # 产品提供方是宿主平面的单例。复制本预设并移除 `disabled` 后，
+    # 才能把该产品只暴露给用这份副本组合出的 agent。
+    - id: tool-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        enableRunInBackground: false
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        enableRunInBackground: false
+        maxDepth: provider-managed
+
+    # workflow-worker-thread 在本组内提供 workflowEngine 服务，
+    # tool-ralph 依赖它（缺少该行会导致预设挂载失败：ralph 永远
+    # 等待 workflowEngine，新会话创建被拒）。v1 不暴露 workflow
+    # 工具本身，只保留 ralph 所需的引擎提供方。
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-ralph
+      name: '@deepseek-ai/dsh-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+# ── 其余面向模型的行 ─────────────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# ── 文献检索 MCP ─────────────────────────────────────────────────────────────
+#
+# literature-search-mcp（Apache-2.0，见 mcp/ 目录）的 stdio 桥接。
+# 模型将看到 mcp__literature__literature_search / literature_sources /
+# literature_get_fulltext 三个工具。{{NODE_PATH}} 与 {{MCP_SERVER_PATH}}
+# 由安装器替换为绝对路径（正斜杠）；Windows 上即使 PATH 未含 Node 也能用。
+# failOnStartupError 保持默认 false：MCP 启动失败时会话仍可用，
+# agent 会按人设回退到通用网络搜索并说明原因。
+- id: mcp-literature
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: literature
+    transport: stdio
+    command: '{{NODE_PATH}}'
+    args: ['{{MCP_SERVER_PATH}}']
+    toolCallTimeoutMs: 120000
+
+# `web` 服务与其搜索提供方留在宿主组合中；这里只保留模型可见工具。
+# fetch 保持关闭：文献全文走 literature_get_fulltext，通用网络只做搜索补充。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

@@ -1,0 +1,3 @@
+name: 科研模式
+description: 生物医学文献检索助手：多数据库学术检索（PubMed/Europe PMC/bioRxiv/Crossref/OpenAlex/Semantic Scholar/arXiv）、证据分级、反证核查与研究日志，全程中文交互。
+order: 5
