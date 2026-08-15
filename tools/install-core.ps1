@@ -27,6 +27,22 @@ function Fail([string]$Msg) {
   exit 1
 }
 
+# Windows PowerShell 5.1 的后台任务会把原生命令写入 stderr 的普通警告
+# 当作 PowerShell 错误；在全局 ErrorActionPreference=Stop 下会直接终止任务。
+# npm 经常输出 deprecated 等非致命警告，因此仅在执行 npm 时暂时允许
+# 非终止错误，并始终以 npm 的真实进程退出码判断成功或失败。
+$script:NpmExitCode = 0
+function Invoke-Npm([string[]]$NpmArgs) {
+  $previousErrorAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $npmCmd @NpmArgs 2>&1 | ForEach-Object { Log ("      " + [string]$_) }
+    $script:NpmExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorAction
+  }
+}
+
 New-Item -ItemType Directory -Force -Path $BR_HOME | Out-Null
 New-Item -ItemType Directory -Force -Path $DSH_DIR | Out-Null
 [IO.File]::WriteAllText($PathMarker, "BR_HOME=$BR_HOME`r`nDSH_DIR=$DSH_DIR`r`n", (New-Object System.Text.UTF8Encoding($false)))
@@ -105,8 +121,8 @@ if ($NoDshInstall) {
   }
   if ($needInstall) {
     Log "[3/7] 安装 DeepSeek Harness @deepseek-ai/dsh@$DSH_VERSION（首次约 1-3 分钟）..."
-    & $npmCmd install -g "@deepseek-ai/dsh@$DSH_VERSION"
-    if ($LASTEXITCODE -ne 0) { Fail 'DSH 安装失败。请检查网络后重试；公司网络请确认 npm 可访问。' }
+    Invoke-Npm -NpmArgs @('install', '-g', "@deepseek-ai/dsh@$DSH_VERSION")
+    if ($script:NpmExitCode -ne 0) { Fail 'DSH 安装失败。请检查网络后重试；公司网络请确认 npm 可访问。' }
   }
 }
 
@@ -133,8 +149,8 @@ if (-not $SkipPlugin) {
     Log '      安装 MCP 运行依赖（npm ci --omit=dev）...'
     Push-Location $mcpDst
     try {
-      & $npmCmd ci --omit=dev
-      if ($LASTEXITCODE -ne 0) { Fail 'MCP 依赖安装失败，请检查网络后重试。' }
+      Invoke-Npm -NpmArgs @('ci', '--omit=dev')
+      if ($script:NpmExitCode -ne 0) { Fail 'MCP 依赖安装失败，请检查网络后重试。' }
     } finally {
       Pop-Location
     }

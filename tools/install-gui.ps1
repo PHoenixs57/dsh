@@ -295,6 +295,17 @@ function Set-Running([bool]$running) {
   if ($running) { $lblStatus.Text = '安装中，请稍候…' }
 }
 
+function Receive-InstallJobOutput {
+  $receiveErrors = @()
+  foreach ($line in @(Receive-Job -Job $script:installJob -ErrorAction SilentlyContinue -ErrorVariable receiveErrors)) {
+    if ($line -match '^BIORESEARCH_EXIT=(\d+)$') { $script:jobExit = [int]$Matches[1]; continue }
+    Append-Log ([string]$line)
+  }
+  foreach ($jobError in $receiveErrors) {
+    Append-Log ("[错误] " + $jobError.Exception.Message)
+  }
+}
+
 # 依据当前路径刷新「已安装 / 可更新 / 未安装」状态
 function Update-InstallState {
   if ($null -ne $script:installJob -and $script:installJob.State -eq 'Running') { return }
@@ -357,17 +368,11 @@ $btnInstall.Add_Click({
 
 $timer.Add_Tick({
   if ($null -eq $script:installJob) { return }
-  foreach ($line in @(Receive-Job -Job $script:installJob -ErrorAction SilentlyContinue)) {
-    if ($line -match '^BIORESEARCH_EXIT=(\d+)$') { $script:jobExit = [int]$Matches[1]; continue }
-    Append-Log ([string]$line)
-  }
+  Receive-InstallJobOutput
   if ($script:installJob.State -eq 'Running') { return }
 
   $timer.Stop()
-  foreach ($line in @(Receive-Job -Job $script:installJob -ErrorAction SilentlyContinue)) {
-    if ($line -match '^BIORESEARCH_EXIT=(\d+)$') { $script:jobExit = [int]$Matches[1]; continue }
-    Append-Log ([string]$line)
-  }
+  Receive-InstallJobOutput
   $exitCode = if ($null -ne $script:jobExit) { $script:jobExit } else { 1 }
   Remove-Job -Job $script:installJob -Force -ErrorAction SilentlyContinue
   $script:installJob = $null
