@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$NoKey,
   [switch]$NoLaunch,
   [switch]$NoDshInstall,

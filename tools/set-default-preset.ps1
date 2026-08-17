@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$DshDir
 )
 # 把「科研模式」写为 DSH 的默认会话模式（settings.yaml 的 agent-presets.default）。

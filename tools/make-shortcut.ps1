@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$Name,
   [Parameter(Mandatory = $true)][string]$TargetPath,
   [Parameter(Mandatory = $true)][string]$WorkingDirectory,

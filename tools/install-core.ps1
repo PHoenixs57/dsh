@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$BR_HOME,
   [Parameter(Mandatory = $true)][string]$DSH_DIR,
   [switch]$NoKey,

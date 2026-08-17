@@ -1,4 +1,4 @@
-param([string]$Port = '3081')
+﻿param([string]$Port = '3081')
 # 科研模式启动脚本主逻辑（由 start.bat 调用）
 # 兼容 Windows PowerShell 5.1；本文件由构建脚本统一加 UTF-8 BOM。
 

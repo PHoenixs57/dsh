@@ -1,4 +1,4 @@
-# 科研模式图形化安装向导（由 install.bat 调用）。
+﻿# 科研模式图形化安装向导（由 install.bat 调用）。
 # 原生 WinForms，零第三方依赖；兼容 Windows PowerShell 5.1（STA）。
 # 本文件由构建脚本统一加 UTF-8 BOM。
 # 注意：函数参数不能命名为 $Input（PowerShell 保留自动变量，永远绑定不到值）。
